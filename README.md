@@ -2,7 +2,7 @@
 
 A minimal, self-hosted OAuth-protected **Model Context Protocol (MCP) resource server**.
 Uses Keycloak for OIDC/JWKS, with a stateless Streamable HTTP `/mcp` endpoint and
-a read-only demo tool. This is **not** copied from any production installation.
+a read-only demo tool and disabled-by-default filesystem tools governed by a host-owned access policy. This is **not** copied from any production installation.
 
 > **Status: reference implementation / local test project.**
 > It has not been tested end-to-end with a real ChatGPT + Keycloak deployment.
@@ -17,7 +17,10 @@ a read-only demo tool. This is **not** copied from any production installation.
 - issuer, audience, expiry and strict OAuth scope checks;
 - separate OAuth scopes from Keycloak realm/client roles (roles never imply scope);
 - small stateless JSON-RPC endpoint with `initialize`, `ping`, `tools/list`,
-  `tools/call`, notifications; one harmless `demo_ping` tool;
+  `tools/call`, notifications; a harmless `demo_ping` and a read-only
+  `permissions_inspect` tool;
+- Keycloak roles/groups + OAuth scopes + read-only host capability policy
+  controlling optional `fs_read` and `fs_write` tools (both disabled by default);
 - fail-closed behavior when Keycloak or JWKS is unavailable;
 - Docker configuration binding only to loopback (publish TLS via your own tunnel/proxy).
 
@@ -28,7 +31,7 @@ ChatGPT / MCP client -> HTTPS reverse proxy or tunnel -> MCP resource server
 
 Keycloak remains the **authorization server**. This code only validates bearer
 access tokens; it does **not** issue tokens, accept arbitrary ID tokens as login,
-forward secrets, translate Keycloak roles into OAuth scopes, or run host commands.
+forward secrets, translate Keycloak roles into OAuth scopes, or run host commands. Admin-owned policy configuration lives outside the AI-writable tree.
 
 ## Local setup
 
@@ -40,6 +43,10 @@ forward secrets, translate Keycloak roles into OAuth scopes, or run host command
    claims. A realm/client *role* named `mcp:read` is **not sufficient**.
 3. Copy the sample environment file: `cp .env.example .env` and replace the
    example URLs/audience with your own. Never commit the real `.env`.
+   Copy `config/policy.example.json` to an administrator-owned file, e.g.
+   `/srv/mcp-policy/policy.json`, **outside ALL AI-editable directories**;
+   keep it root-owned and read-only, and set `MCP_POLICY_HOST_FILE` accordingly.
+   See `docs/ACCESS_POLICY.md` for the complete setup and role/group mapping.
 4. Run `docker compose up --build -d`. The HTTP listener binds to
    `127.0.0.1:8000` only, for use by a **locally running** HTTPS reverse proxy or
    Cloudflare Tunnel process. If your proxy is containerized, use an isolated
@@ -96,7 +103,9 @@ References:
 This is a **standalone sanitized implementation**, not a feature-complete
 multiplexing gateway. No SSH, Docker socket, shell execution, private IP
 addresses, internal hostnames, persistent secrets, production configuration,
-or connection to the original environment are included. Advanced MCP features,
+or connection to the original environment are included. Optional constrained
+filesystem read/write tools are disabled by default, require explicit Keycloak
+claims and host policy, and cannot update the live policy file. Advanced MCP features,
 SSE streaming and server-initiated messages are intentionally excluded.
 
 Before publishing or using in production, independently review the changes,

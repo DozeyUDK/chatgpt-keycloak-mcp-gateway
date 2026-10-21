@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "keycloak": {
+    "client_id": "mcp-api"
+  },
+  "capabilities": {
+    "WRITE_AND_ACCESS": false,
+    "READ_ACCESS": false,
+    "INSPECT_PERMISSIONS": true
+  },
+  "filesystem": {
+    "READABLE_ROOTS": [],
+    "EDITABLE_ROOTS": [],
+    "max_read_bytes": 65536,
+    "max_write_bytes": 65536
+  },
+  "tools": {
+    "demo_ping": {
+      "enabled": true,
+      "required_scopes": ["mcp:read"],
+      "any_roles": [],
+      "any_groups": []
+    },
+    "permissions_inspect": {
+      "enabled": true,
+      "required_scopes": ["mcp:read"],
+      "any_roles": [],
+      "any_groups": []
+    },
+    "fs_read": {
+      "enabled": false,
+      "required_scopes": ["mcp:read"],
+      "any_roles": ["mcp-reader"],
+      "any_groups": ["/ai-readers"]
+    },
+    "fs_write": {
+      "enabled": false,
+      "required_scopes": ["mcp:read", "mcp:write"],
+      "any_roles": ["mcp-writer"],
+      "any_groups": ["/ai-writers"]
+    }
+  }
+}

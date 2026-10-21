@@ -77,7 +77,7 @@ def test_initialize_and_tools(client):
     r = rpc(client, "initialize", params={"protocolVersion": "2025-11-25"})
     assert r.status_code == 200
     assert r.json()["result"]["protocolVersion"] == "2025-11-25"
-    assert rpc(client, "tools/list").json()["result"]["tools"][0]["name"] == "demo_ping"
+    assert {tool["name"] for tool in rpc(client, "tools/list").json()["result"]["tools"]} == {"demo_ping", "permissions_inspect"}
     assert rpc(client, "tools/call", params={"name": "demo_ping", "arguments": {}}).json()["result"]["content"][0]["text"] == "pong"
 
 
@@ -98,6 +98,16 @@ def test_invalid_payload_and_size(client):
     r = client.post("/mcp", headers={"Authorization": "Bearer ok", "Content-Type": "application/json"},
                     content="[" + "a" * 66000 + "]")
     assert r.status_code == 413
+
+
+def test_inspect_permissions_explains_missing_write(client):
+    result = rpc(client, "tools/call", params={"name": "permissions_inspect", "arguments": {}}).json()
+    import json
+    permissions = json.loads(result["result"]["content"][0]["text"])
+    assert permissions["capabilities"]["fs_write"]["available"] is False
+    assert "WRITE_AND_ACCESS" in permissions["capabilities"]["fs_write"]["admin_action_if_disabled"]
+    assert "/home" not in str(permissions)
+    assert rpc(client, "tools/call", params={"name": "fs_write", "arguments": {"path": "/tmp/foo", "content": "x"}}).json()["error"]["code"] == -32602
 
 
 def test_unknown_method(client):

@@ -6,6 +6,7 @@ reverse proxy or an arbitrary remote-command executor.
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -14,15 +15,44 @@ from fastapi.responses import JSONResponse, Response
 
 from .auth import AuthBackendError, InsufficientScope, InvalidAccessToken, OIDCVerifier
 from .config import Settings
+from .policy import Policy, load_policy
+from .fs_safe import FileAccessDenied, read_text, write_text
 
 SUPPORTED_VERSIONS = ("2025-11-25", "2025-06-18")
 MAX_REQUEST_BYTES = 65536
 BEARER = re.compile(r"^Bearer ([A-Za-z0-9._~+/\-=]+)$", re.ASCII)
-TOOL = {
-    "name": "demo_ping",
-    "description": "Read-only demonstration tool. Returns a constant pong string.",
-    "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
-    "annotations": {"readOnlyHint": True, "destructiveHint": False},
+TOOLS = {
+    "demo_ping": {
+        "name": "demo_ping",
+        "description": "Read-only demonstration tool. Returns a constant pong string.",
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+    },
+    "permissions_inspect": {
+        "name": "permissions_inspect",
+        "description": "View agent capability status and administrative steps needed to enable locked features. Cannot edit policy.",
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+    },
+    "fs_read": {
+        "name": "fs_read",
+        "description": "Read UTF-8 text from administrator-approved read-only roots.",
+        "inputSchema": {
+            "type": "object", "properties": {"path": {"type": "string"}},
+            "required": ["path"], "additionalProperties": False,
+        },
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+    },
+    "fs_write": {
+        "name": "fs_write",
+        "description": "Atomically write UTF-8 text inside admin-approved writable roots. Never modifies policy.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+            "required": ["path", "content"], "additionalProperties": False,
+        },
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
+    },
 }
 
 
@@ -33,10 +63,11 @@ def _rpc_error(code: int, message: str, request_id: Any = None, status: int = 20
     )
 
 
-def create_app(settings: Settings | None = None, verifier: OIDCVerifier | None = None) -> FastAPI:
-    # Settings are loaded explicitly so missing values fail before exposure.
+def create_app(settings: Settings | None = None, verifier: OIDCVerifier | None = None, policy: Policy | None = None) -> FastAPI:
+    # Missing/invalid policy must prevent startup; no fallback to allow-all.
     settings = settings or Settings.from_env()
     verifier = verifier or OIDCVerifier(settings)
+    policy = policy or load_policy(os.getenv("POLICY_FILE", "/etc/mcp/policy.json"))
     app = FastAPI(title="Example ChatGPT Keycloak MCP Gateway", docs_url=None, redoc_url=None, openapi_url=None)
 
     def _challenge(*, code: str | None = None, status: int = 401) -> JSONResponse:
@@ -59,7 +90,7 @@ def create_app(settings: Settings | None = None, verifier: OIDCVerifier | None =
         return {
             "resource": settings.public_url,
             "authorization_servers": [settings.issuer],
-            "scopes_supported": [settings.required_scope],
+            "scopes_supported": sorted(set([settings.required_scope] + (["mcp:write"] if policy.tools["fs_write"].enabled else []))),
             "bearer_methods_supported": ["header"],
         }
 
@@ -71,7 +102,7 @@ def create_app(settings: Settings | None = None, verifier: OIDCVerifier | None =
         if not matched:
             return _challenge()
         try:
-            verifier.verify(matched.group(1))
+            claims = verifier.verify(matched.group(1))
         except InvalidAccessToken:
             return _challenge(code="invalid_token")
         except InsufficientScope:
@@ -123,11 +154,40 @@ def create_app(settings: Settings | None = None, verifier: OIDCVerifier | None =
         elif method == "ping":
             result = {}
         elif method == "tools/list":
-            result = {"tools": [TOOL]}
+            result = {"tools": [TOOLS[name] for name in sorted(TOOLS) if policy.allowed(name, claims)]}
         elif method == "tools/call":
-            if params.get("name") != TOOL["name"] or params.get("arguments", {}) != {}:
-                return _rpc_error(-32602, "Unknown tool or invalid arguments", request_id)
-            result = {"content": [{"type": "text", "text": "pong"}], "isError": False}
+            name = params.get("name")
+            arguments = params.get("arguments", {})
+            if not isinstance(name, str) or not policy.allowed(name, claims):
+                return _rpc_error(-32602, "Unknown or unauthorized tool", request_id)
+            if not isinstance(arguments, dict):
+                return _rpc_error(-32602, "Invalid arguments", request_id)
+            if name == "demo_ping":
+                if arguments:
+                    return _rpc_error(-32602, "Invalid arguments", request_id)
+                output = "pong"
+            elif name == "permissions_inspect":
+                if arguments:
+                    return _rpc_error(-32602, "Invalid arguments", request_id)
+                output = json.dumps(policy.inspect(claims), sort_keys=True)
+            elif name == "fs_read":
+                if set(arguments) != {"path"} or not isinstance(arguments["path"], str):
+                    return _rpc_error(-32602, "Invalid arguments", request_id)
+                try:
+                    output = read_text(policy.readable_roots, arguments["path"], policy.max_read_bytes)
+                except (FileAccessDenied, OSError):
+                    return _rpc_error(-32602, "File not allowed", request_id)
+            elif name == "fs_write":
+                if set(arguments) != {"path", "content"}:
+                    return _rpc_error(-32602, "Invalid arguments", request_id)
+                try:
+                    count = write_text(policy.editable_roots, arguments["path"], arguments["content"], policy.max_write_bytes)
+                except (FileAccessDenied, OSError):
+                    return _rpc_error(-32602, "File not allowed", request_id)
+                output = json.dumps({"bytes_written": count})
+            else:
+                return _rpc_error(-32602, "Unknown tool", request_id)
+            result = {"content": [{"type": "text", "text": output}], "isError": False}
         else:
             return _rpc_error(-32601, "Method not found", request_id)
         return JSONResponse({"jsonrpc": "2.0", "id": request_id, "result": result})

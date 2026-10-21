@@ -28,6 +28,10 @@ issues containing secrets.
 
 - Keep port 8000 internal; terminate public HTTPS at a trusted proxy.
 - Do not route unauthenticated users to privileged internal services.
+- Keep the live policy outside every AI-writable root, owned by an administrator,
+  and bind-mounted :ro; do not serve it from ChatGPT_Editable.
+- OAuth scopes, Keycloak roles/groups and host policy are independent grants;
+  disabling any one must prevent privileged access.
 - Do not configure Cloudflare Access in a way that blocks OAuth discovery or
   ChatGPT's authorization flow; apply narrowly scoped WAF exceptions only
   where actually required.

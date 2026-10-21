@@ -4,9 +4,19 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      POLICY_FILE: /etc/mcp/policy.json
     ports:
       # Bind locally; publish HTTPS via a trusted reverse proxy/tunnel.
       - "127.0.0.1:8000:8000"
+    volumes:
+      # Mandatory admin-controlled policy, outside all AI-writable roots.
+      - type: bind
+        source: ${MCP_POLICY_HOST_FILE:?Set MCP_POLICY_HOST_FILE in .env}
+        target: /etc/mcp/policy.json
+        read_only: true
+        bind:
+          create_host_path: false
     read_only: true
     tmpfs:
       - /tmp
