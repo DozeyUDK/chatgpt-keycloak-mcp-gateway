@@ -1,6 +1,14 @@
 # Keycloak-Protected MCP Resource Server
 
-What would you say if you could control your infrastructure directly from ChatGPT, with strict policies enforced so the LLM operates in a much more controlled way? Well, it's possible. I built this repository based on my home lab setup, where ChatGPT handles tasks like writing code, reviewing diffs, designing architecture for downstream LLMs (like Codex or Claude Code), or simply checking server metrics and status-all without using a rate-limited ngrok or burning through tokens.
+What if you could manage your own infrastructure directly from ChatGPT, without giving an AI unrestricted access to your servers?
+
+That's what I built for my homelab.
+
+I use ChatGPT to check server health, inspect projects, review code changes, edit files, and prepare technical plans for coding agents like Codex and Claude Code. Keycloak handles authentication, while OAuth scopes, roles, groups, and server-side policies determine exactly what ChatGPT is allowed to do.
+
+The integration runs on my own infrastructure, without relying on ngrok or requiring a separately billed OpenAI API integration. I use it through my regular ChatGPT Plus subscription, subject to its normal usage limits.
+
+This repository provides a smaller, sanitized implementation of that approach, focused on MCP authentication, authorization, and controlled tool access.
 
 A small, self-hosted **Model Context Protocol (MCP) server** that validates Keycloak OAuth access tokens and controls which tools an AI client may use. Access is restricted by OAuth scopes, Keycloak roles/groups, an administrator-owned JSON policy and Docker filesystem mounts.
 
