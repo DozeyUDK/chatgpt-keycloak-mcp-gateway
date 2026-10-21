@@ -6,11 +6,58 @@ A small, self-hosted **Model Context Protocol (MCP) server** that validates Keyc
 
 **Included:** `demo_ping` and `permissions_inspect` are enabled by default. Optional `fs_read` and `fs_write` operate only inside approved directories and are **disabled by default**. The example has automated security/transport tests and a minimal JSON-RPC MCP endpoint.
 
-**Not included:** the ChatGPT-specific Keycloak CIMD client-registration compatibility adapter, a real-Keycloak integration test stack, and the broader tool collection of my private deployment. **Do not assume this repository connects to ChatGPT out of the box.** See [Compatibility and remaining work](#chatgpt-compatibility-and-remaining-work) below.
+**Not included:** the ChatGPT-specific Keycloak CIMD client-registration compatibility adapter, a publicly accessible interactive ChatGPT OAuth deployment, and the broader tool collection of my private deployment. **Do not assume this repository connects to ChatGPT out of the box.** See [Compatibility and remaining work](#chatgpt-compatibility-and-remaining-work) below.
 
 I use a larger self-hosted Keycloak/MCP connector with ChatGPT. This repository is an independent, sanitized demonstration of the resource-server and authorization-policy parts—not a distribution of that complete installation.
 
 **Before granting write access:** read the [Threat Model](docs/THREAT_MODEL.md), especially the prompt-injection and confused-deputy risks. Authentication and RBAC cannot prove that an AI-initiated file edit reflects the human user's intent.
+
+## One-command local demo
+
+Clone this repository and run:
+
+```bash
+git clone https://github.com/DozeyUDK/chatgpt-keycloak-mcp-gateway.git
+cd chatgpt-keycloak-mcp-gateway
+bash scripts/dev_demo.sh
+```
+
+The script pulls an isolated **Keycloak 26.8.1** container, imports a disposable
+realm, creates a temporary self-signed HTTPS certificate, builds the MCP server,
+and uses an actual Keycloak-issued OAuth access token to invoke `demo_ping` and
+`permissions_inspect`. It also verifies unauthorized requests are denied.
+
+**No production credentials, real user accounts, or host ports are required.**
+The demo uses a known, public-only fixture client secret; never reuse the
+fixture in an Internet-accessible deployment. This verifies Keycloak → MCP
+integration, **not the interactive ChatGPT OAuth/CIMD registration flow**.
+
+See [Local demo and teardown](docs/LOCAL_DEMO.md).
+
+## ChatGPT connection fields (example)
+
+For a **separately configured, HTTPS-exposed** deployment, the connection
+settings in the ChatGPT client are typically similar to the following.
+All hostnames and identifiers below are **fictional placeholders**, not a
+copy of my home infrastructure:
+
+| Field | Example value |
+| --- | --- |
+| MCP Server URL | `https://mcp.example.com/mcp` |
+| Client ID | `mcp-chatgpt` |
+| Client Secret | *Your own Keycloak client secret (Credentials tab; never commit it)* |
+| Scopes | `openid offline_access mcp:read` |
+| Issuer | `https://auth.example.com/realms/demo` |
+| Token authentication method | `client_secret_post` |
+
+These values require a **confidential Keycloak client** with
+authorization-code flow, the exact redirect URI shown by ChatGPT and PKCE
+as supported by your configuration. `offline_access` additionally requires
+the appropriate Keycloak offline-session permissions/settings. Use the
+client-authentication method actually supported by your ChatGPT UI and
+Keycloak client; do not assume the local smoke-test client is suitable.
+**The public demo does not create this interactive client or solve the
+CIMD compatibility gap.**
 
 ## Guided deployment with a coding agent (Codex, Cursor, or Claude Code)
 
@@ -70,7 +117,10 @@ INSTALLATION AND VALIDATION PROCEDURE
    repository status and record the initial state. Run Python tests and
    validate Docker Compose before changing infrastructure.
 
-2. Set up a dedicated Keycloak realm/client for this MCP resource (or
+2. Set up a dedicated confidential Keycloak OAuth client with
+   client_secret_post if that is supported by the chosen ChatGPT connection
+   UI; do not publish its secret. Use a dedicated realm/client for this
+   MCP resource (or
    reuse an explicitly approved test realm). Configure authorization
    code flow + PKCE S256, exact ChatGPT-provided redirect URI, and strict
    trusted origins. Configure an access-token audience exactly equal to
@@ -235,8 +285,8 @@ See [Access Policy](docs/ACCESS_POLICY.md) for roles, groups and configuration.
 
 ## Local setup
 
-1. Create a Keycloak realm and register a **public OAuth client** for ChatGPT
-   (authorization-code + PKCE S256). Use the **exact redirect URI and client
+1. Create a Keycloak realm and register a **confidential OAuth client** for ChatGPT
+   when using `client_secret_post` (authorization-code + PKCE S256). Use the **exact redirect URI and client
    details shown in the ChatGPT MCP connection UI**; do not guess callbacks.
 2. Configure Keycloak to issue access tokens containing the **audience** for
    this MCP API and the OAuth scope `mcp:read`. Check actual decoded access-token

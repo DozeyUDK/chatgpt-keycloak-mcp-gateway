@@ -1,0 +1,66 @@
+{
+  "realm": "mcp-demo",
+  "enabled": true,
+  "displayName": "Local MCP development demo (not production)",
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      {
+        "name": "mcp-reader",
+        "description": "Demo reader role; not assigned by default"
+      },
+      {
+        "name": "mcp-writer",
+        "description": "Demo writer role; not assigned by default"
+      }
+    ]
+  },
+  "clientScopes": [
+    {
+      "name": "mcp:read",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "mcp:write",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "mcp-demo-smoke",
+      "name": "Local smoke test client - DEV ONLY",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "demo-only-change-or-discard",
+      "defaultClientScopes": [
+        "mcp:read"
+      ],
+      "protocolMappers": [
+        {
+          "name": "Demo MCP resource audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "https://mcp.demo.invalid/mcp",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}
