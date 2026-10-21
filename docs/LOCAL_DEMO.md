@@ -21,7 +21,7 @@ cd chatgpt-keycloak-mcp-gateway
 bash scripts/dev_demo.sh
 ```
 
-The script runs `docker compose -f docker-compose.dev.yml up --build --wait -d
+The script runs `docker compose -f docker-compose.dev.yml up --build --force-recreate --wait -d
 mcp-gateway`, then a disposable smoke client. The client:
 
 1. Requests `client_credentials` token from a real local Keycloak realm.
