@@ -1,0 +1,23 @@
+services:
+  mcp-gateway:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # Bind locally; publish HTTPS via a trusted reverse proxy/tunnel.
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    user: "10001:10001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -1,0 +1,29 @@
+# Secrets / local state
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.log
+*.sqlite*
+*.db
+*.bak
+*.bak.*
+**/backups/
+**/secrets/
+**/.ssh/
+# Python / editors
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.coverage
+.idea/
+.vscode/
+dist/
+build/
+*.egg-info/
