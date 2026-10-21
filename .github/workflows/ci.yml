@@ -18,3 +18,21 @@ jobs:
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest -q
       - run: docker build --tag mcp-gateway:ci .
+
+  keycloak-integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate demo compose file
+        run: docker compose -f docker-compose.dev.yml config --quiet
+      - name: Pull disposable Keycloak and test real OAuth token against MCP
+        run: bash scripts/dev_demo.sh
+      - name: Collect logs on failure (do not print credentials)
+        if: failure()
+        run: docker compose -f docker-compose.dev.yml logs --tail=80 mcp-gateway keycloak
+      - name: Tear down isolated demo
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down -v --remove-orphans
