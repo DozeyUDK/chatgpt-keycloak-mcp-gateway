@@ -1,7 +1,7 @@
-"""Minimal stateless Streamable HTTP MCP endpoint with OAuth resource metadata.
+"""Minimal OAuth-protected MCP resource server with policy-controlled tools.
 
-A demonstration resource server with one read-only tool, not a generic
-reverse proxy or an arbitrary remote-command executor.
+A demonstration server with read-only introspection and optional constrained
+filesystem tools, not a generic proxy or remote-command executor.
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from .auth import AuthBackendError, InsufficientScope, InvalidAccessToken, OIDCV
 from .config import Settings
 from .policy import Policy, load_policy
 from .fs_safe import FileAccessDenied, read_text, write_text
+from .audit import record_tool_event
 
 SUPPORTED_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26")
 MAX_REQUEST_BYTES = 65536
@@ -68,7 +69,7 @@ def create_app(settings: Settings | None = None, verifier: OIDCVerifier | None =
     settings = settings or Settings.from_env()
     verifier = verifier or OIDCVerifier(settings)
     policy = policy or load_policy(os.getenv("POLICY_FILE", "/etc/mcp/policy.json"))
-    app = FastAPI(title="Example ChatGPT Keycloak MCP Gateway", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="Keycloak-Protected MCP Resource Server", docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.middleware("http")
     async def transport_security(request: Request, call_next):
@@ -191,41 +192,53 @@ def create_app(settings: Settings | None = None, verifier: OIDCVerifier | None =
             name = params.get("name")
             arguments = params.get("arguments", {})
             if not isinstance(name, str) or not policy.enabled(name):
+                record_tool_event(claims, name, "deny", "disabled", arguments)
                 return _rpc_error(-32602, "Unknown or unauthorized tool", request_id)
             if not policy.allowed(name, claims):
                 scopes = policy.tools[name].scopes
                 granted = claims.get("scope", "")
                 granted_set = set(granted.split()) if isinstance(granted, str) else set()
                 if not set(scopes).issubset(granted_set):
+                    record_tool_event(claims, name, "deny", "missing_scope", arguments)
                     return _challenge(code="insufficient_scope", status=403, scopes=scopes)
+                record_tool_event(claims, name, "deny", "role_or_group_denied", arguments)
                 return JSONResponse({"error": "forbidden"}, status_code=403)
             if not isinstance(arguments, dict):
+                record_tool_event(claims, name, "deny", "bad_arguments")
                 return _rpc_error(-32602, "Invalid arguments", request_id)
             if name == "demo_ping":
                 if arguments:
+                    record_tool_event(claims, name, "deny", "bad_arguments")
                     return _rpc_error(-32602, "Invalid arguments", request_id)
                 output = "pong"
             elif name == "permissions_inspect":
                 if arguments:
+                    record_tool_event(claims, name, "deny", "bad_arguments")
                     return _rpc_error(-32602, "Invalid arguments", request_id)
                 output = json.dumps(policy.inspect(claims), sort_keys=True)
             elif name == "fs_read":
                 if set(arguments) != {"path"} or not isinstance(arguments["path"], str):
+                    record_tool_event(claims, name, "deny", "bad_arguments")
                     return _rpc_error(-32602, "Invalid arguments", request_id)
                 try:
                     output = read_text(policy.readable_roots, arguments["path"], policy.max_read_bytes)
                 except (FileAccessDenied, OSError):
+                    record_tool_event(claims, name, "deny", "invalid_path", arguments)
                     return _rpc_error(-32602, "File not allowed", request_id)
             elif name == "fs_write":
                 if set(arguments) != {"path", "content"}:
+                    record_tool_event(claims, name, "deny", "bad_arguments")
                     return _rpc_error(-32602, "Invalid arguments", request_id)
                 try:
                     count = write_text(policy.editable_roots, arguments["path"], arguments["content"], policy.max_write_bytes)
                 except (FileAccessDenied, OSError):
+                    record_tool_event(claims, name, "deny", "invalid_path", arguments)
                     return _rpc_error(-32602, "File not allowed", request_id)
                 output = json.dumps({"bytes_written": count})
             else:
+                record_tool_event(claims, name, "deny", "unknown_tool", arguments)
                 return _rpc_error(-32602, "Unknown tool", request_id)
+            record_tool_event(claims, name, "allow", "ok", arguments)
             result = {"content": [{"type": "text", "text": output}], "isError": False}
         else:
             return _rpc_error(-32601, "Method not found", request_id)

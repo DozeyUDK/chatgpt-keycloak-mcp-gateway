@@ -70,10 +70,16 @@ class OIDCVerifier:
         self.settings = settings
         self._jwks: dict | None = None
         self._expires = 0.0
+        self._last_fetch_attempt = float('-inf')
+        self._min_rotation_refetch_seconds = 30.0
 
-    def _get_jwks(self) -> dict:
-        if self._jwks and time.monotonic() < self._expires:
-            return self._jwks
+    def _get_jwks(self, *, force: bool = False) -> dict:
+        now = time.monotonic()
+        if self._jwks and now < self._expires:
+            if not force or now - self._last_fetch_attempt < self._min_rotation_refetch_seconds:
+                return self._jwks
+        # Bound repeated refresh attempts even for attacker-supplied unknown kid.
+        self._last_fetch_attempt = now
         # Never accept untrusted URLs from a token. Discovery is constrained to
         # the configured issuer, with no redirects or cross-origin JWKS fetches.
         metadata = _fetch_json(f"{self.settings.issuer}/.well-known/openid-configuration")
@@ -92,9 +98,28 @@ class OIDCVerifier:
         if not token or len(token) > 16384:
             raise InvalidAccessToken()
         try:
+            header = jwt.get_unverified_header(token)
+            kid = header.get("kid")
+            if (header.get("alg") != "RS256" or not isinstance(kid, str)
+                    or not kid or len(kid) > 128):
+                raise InvalidAccessToken()
+        except (JWTError, ValueError, TypeError) as exc:
+            raise InvalidAccessToken() from exc
+        keys = self._get_jwks()
+        def contains_kid(source: dict) -> bool:
+            return any(isinstance(item, dict) and item.get("kid") == kid
+                       and item.get("kty") == "RSA" for item in source.get("keys", []))
+        if not contains_kid(keys):
+            # Valid rotations can introduce a new signing key before cache TTL.
+            # Only refetch periodically, never once per unknown kid/request.
+            if self._jwks is keys:
+                keys = self._get_jwks(force=True)
+            if not contains_kid(keys):
+                raise InvalidAccessToken()
+        try:
             claims = jwt.decode(
                 token,
-                self._get_jwks(),
+                keys,
                 algorithms=["RS256"],
                 issuer=self.settings.issuer,
                 audience=self.settings.audience,

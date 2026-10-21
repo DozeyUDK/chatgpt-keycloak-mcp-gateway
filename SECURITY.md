@@ -26,6 +26,20 @@ issues containing secrets.
 - [ ] Do not allow shell/Docker/SSH tools without per-action authorization,
       allowlists, audit trails and separate privilege boundaries.
 
+## Threat model and audit logging
+
+Read [Threat Model](docs/THREAT_MODEL.md) before granting file-write permissions.
+Keycloak authorization and a filesystem allowlist cannot prevent a confused-deputy
+attack if an AI model follows malicious instructions embedded in a file it reads.
+Keep write operations confined to a disposable workspace and require independent
+human review for high-impact edits.
+
+All authenticated MCP tool calls emit structured audit metadata through the
+`gateway.audit` logger: a pseudonymous subject fingerprint, tool name, decision,
+reason and an optional path fingerprint or content byte length. The logger omits
+raw content, paths, credentials and tokens; configure safe collector access,
+retention, and rate limits outside the server. This is not tamper-evident logging.
+
 ## Deployment warnings
 
 - Keep port 8000 internal; terminate public HTTPS at a trusted proxy.

@@ -1,24 +1,16 @@
-# ChatGPT + Keycloak MCP Gateway
+# Keycloak-Protected MCP Resource Server
 
-**I use ChatGPT to work with files and self-hosted tools, while keeping access under my control.**
+A small, self-hosted **Model Context Protocol (MCP) server** that validates Keycloak OAuth access tokens and controls which tools an AI client may use. Access is restricted by OAuth scopes, Keycloak roles/groups, an administrator-owned JSON policy and Docker filesystem mounts.
 
-In my running setup, ChatGPT can inspect projects, edit files in approved directories, and invoke explicitly exposed server-side tools. It can also prepare implementation plans for other coding agents, so I can review the work in ChatGPT and hand off the coding when needed.
+**Included:** `demo_ping` and `permissions_inspect` are enabled by default. Optional `fs_read` and `fs_write` operate only inside approved directories and are **disabled by default**. The example has automated security/transport tests and a minimal JSON-RPC MCP endpoint.
 
-Keycloak handles sign-in and role/group membership. A separate, administrator-owned policy controls which MCP tools are available and where they may read or write.
+**Not included:** the ChatGPT-specific Keycloak CIMD client-registration compatibility adapter, a real-Keycloak integration test stack, and the broader tool collection of my private deployment. **Do not assume this repository connects to ChatGPT out of the box.** See [Compatibility and remaining work](#chatgpt-compatibility-and-remaining-work) below.
 
-### Tested with ChatGPT Plus in regular Chat mode
+I use a larger self-hosted Keycloak/MCP connector with ChatGPT. This repository is an independent, sanitized demonstration of the resource-server and authorization-policy parts—not a distribution of that complete installation.
 
-My **full, self-hosted connector is running and I have used it successfully with ChatGPT Plus and Keycloak**. I use it from regular **Chat mode**; **Work mode is not required** for my setup. Availability may vary by plan and account.
+**Before granting write access:** read the [Threat Model](docs/THREAT_MODEL.md), especially the prompt-injection and confused-deputy risks. Authentication and RBAC cannot prove that an AI-initiated file edit reflects the human user's intent.
 
-If you want to use the normal Chat experience rather than the separate Work/Codex agentic allowance, stay in **Chat mode**. This does **not** mean unlimited or zero-token usage: normal ChatGPT plan and feature limits still apply. The gateway itself does not need an OpenAI API key or make paid OpenAI API inference requests.
-
-### What is included in this repository?
-
-This is a **sanitized, deliberately smaller example** of the architecture behind my working integration, not a copy of its full production toolset. It includes OAuth token validation, Keycloak role/group checks, an administrator-controlled access policy, `demo_ping`, `permissions_inspect`, and optional `fs_read` / `fs_write` tools (disabled by default).
-
-My **live connector works**; the **standalone public example** has automated tests but has **not been separately validated end-to-end against a fresh ChatGPT + Keycloak deployment**. Extra server operations must be implemented and granted explicitly. This code is not a production security audit or a drop-in replacement for the full connector.
-
-## Set it up with a coding agent (Codex, Cursor, or Claude Code)
+## Guided deployment with a coding agent (Codex, Cursor, or Claude Code)
 
 Clone this repository on the **server where you want to run the gateway**, open
 the repository in your coding agent, and paste the prompt below. Give the agent
@@ -163,7 +155,7 @@ and tested, and (c) what still needs my approval or manual action.
 
 </details>
 
-**Expected result:** a functioning read-only MCP connection first, with
+**Target result (requires completing the missing ChatGPT compatibility work where applicable):** a functioning read-only MCP connection first, with
 optional filesystem access granted explicitly by Keycloak roles/scopes,
 the private policy file, and Docker mounts. The public template does not
 include the full tool collection of my private installation.
@@ -181,6 +173,8 @@ include the full tool collection of my private installation.
 - Keycloak roles/groups + OAuth scopes + read-only host capability policy
   controlling optional `fs_read` and `fs_write` tools (both disabled by default);
 - fail-closed behavior when Keycloak or JWKS is unavailable;
+- bounded JWKS refresh on unknown key IDs and structured tool authorization
+  audit events (no raw arguments, bearer tokens or source paths);
 - Streamable HTTP transport checks (`Origin`, `MCP-Protocol-Version`),
   OAuth scope challenges and authenticated GET returning HTTP 405 without SSE;
 - Docker configuration binding only to loopback (publish TLS via your own tunnel/proxy).
@@ -292,15 +286,22 @@ To inspect unauthenticated challenge:
 Expected: 401 with WWW-Authenticate resource_metadata and scope. A token with
 incorrect issuer, audience, expiry or scope MUST be rejected.
 
-## Keycloak ↔ ChatGPT caveat (as of October 2026)
+## ChatGPT compatibility and remaining work
 
 Keycloak's MCP integration guide documents **ChatGPT CIMD metadata
 incompatibility**. In particular ChatGPT advertises
 `token_endpoint_auth_methods_supported` while Keycloak expects
-`token_endpoint_auth_method`. This template deliberately does **not**
-synthesize OAuth registration endpoints or weaken validation. Use a properly
-pre-registered client when supported by your ChatGPT setup, or a separately
-reviewed, standards-compliant compatibility layer.
+`token_endpoint_auth_method`. **This repository does not ship that compatibility layer.** A deployment may
+need a Keycloak client-policy executor that normalizes CIMD metadata as described
+in Keycloak's documentation, or a supported pre-registered OAuth client if the
+ChatGPT connection UI permits it. Neither path is proven for a clean installation
+of this public example. Do not disable token validation to work around registration.
+
+A real-Keycloak E2E suite, ChatGPT OAuth interoperability test and full MCP SDK
+transport review remain outstanding. See [Threat Model](docs/THREAT_MODEL.md).
+The handwritten JSON-RPC subset is kept small for this example; the official
+[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) is the
+recommended long-term implementation path to reduce protocol drift.
 
 References:
 
@@ -322,8 +323,8 @@ SSE streaming and server-initiated messages are intentionally excluded.
 Before publishing or using in production, independently review the changes,
 run Gitleaks/TruffleHog against **the whole history**, validate Keycloak
 authorization-code + PKCE behavior, exercise real ChatGPT OAuth connectivity,
-add observability and rate limits at your proxy, and run dependency/security
-scanning. See SECURITY.md.
+add external log collection, retention and ingress rate limits, and run
+dependency/security scanning. See SECURITY.md and docs/THREAT_MODEL.md.
 
 ## License
 

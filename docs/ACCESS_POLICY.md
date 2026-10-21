@@ -117,6 +117,14 @@ Existing signed tokens retain prior role/scope claims until they expire; use
 short token TTLs or a separate audited revocation/introspection mechanism for
 rapid privilege removal.
 
+## MCP tool audit
+
+Every authenticated `tools/call` emits a structured allow/deny audit event.
+The log includes the selected tool, decision/reason and pseudonymous subject
+identifier. File paths are hashed and file contents are never logged. Read
+[Threat Model](THREAT_MODEL.md) for prompt-injection, confused-deputy,
+retention and revocation limitations.
+
 ## File operation safety
 
 fs_read/fs_write are disabled by default. When enabled:
