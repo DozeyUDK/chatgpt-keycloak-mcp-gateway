@@ -1,0 +1,91 @@
+# Disposable local Keycloak + MCP JWT integration demo.
+# Does NOT make ChatGPT login work on the public Internet.
+name: keycloak-mcp-demo
+services:
+  tls-init:
+    build: .
+    user: "0:0"
+    network_mode: none
+    read_only: true
+    volumes:
+      - dev-tls:/dev-tls
+      - ./scripts/generate_dev_tls.py:/srv/app/generate_dev_tls.py:ro
+    command: ["python", "/srv/app/generate_dev_tls.py"]
+    restart: "no"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1
+    command:
+      - start-dev
+      - --import-realm
+      - --hostname=https://keycloak:8443
+      - --https-certificate-file=/dev-tls/keycloak.pem
+      - --https-certificate-key-file=/dev-tls/keycloak-key.pem
+      - --http-enabled=false
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: demo-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: demo-only-not-for-production
+      KC_HEALTH_ENABLED: "true"
+      JAVA_OPTS_KC_HEAP: "-XX:MaxRAMPercentage=65"
+    volumes:
+      - dev-tls:/dev-tls:ro
+      - ./dev/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+    depends_on:
+      tls-init:
+        condition: service_completed_successfully
+    expose: ["8443"]
+    mem_limit: 1g
+    # Neither port 8443 nor the administrative UI is exposed on the host.
+
+  mcp-gateway:
+    build: .
+    read_only: true
+    user: "10001:10001"
+    environment:
+      MCP_PUBLIC_URL: https://mcp.demo.invalid/mcp
+      KEYCLOAK_ISSUER: https://keycloak:8443/realms/mcp-demo
+      KEYCLOAK_AUDIENCE: https://mcp.demo.invalid/mcp
+      MCP_REQUIRED_SCOPE: mcp:read
+      POLICY_FILE: /etc/mcp/policy.json
+      SSL_CERT_FILE: /dev-tls/keycloak.pem
+    volumes:
+      - dev-tls:/dev-tls:ro
+      - ./config/policy.example.json:/etc/mcp/policy.json:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    pids_limit: 100
+    depends_on:
+      keycloak:
+        condition: service_started
+    # The demo remains private to the Docker network: no host ports.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  smoke:
+    profiles: [smoke]
+    build: .
+    entrypoint: ["python", "/srv/app/dev_smoke.py"]
+    environment:
+      KEYCLOAK_DEV_ISSUER: https://keycloak:8443/realms/mcp-demo
+      KEYCLOAK_DEV_CLIENT_ID: mcp-demo-smoke
+      KEYCLOAK_DEV_CLIENT_SECRET: demo-only-change-or-discard
+      MCP_DEV_LOCAL_URL: http://mcp-gateway:8000/mcp
+      SSL_CERT_FILE: /dev-tls/keycloak.pem
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    volumes:
+      - dev-tls:/dev-tls:ro
+      - ./scripts/dev_smoke.py:/srv/app/dev_smoke.py:ro
+    depends_on:
+      mcp-gateway:
+        condition: service_healthy
+
+volumes:
+  dev-tls:
