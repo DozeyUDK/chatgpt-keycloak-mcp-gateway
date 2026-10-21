@@ -26,12 +26,55 @@ a read-only demo tool and disabled-by-default filesystem tools governed by a hos
 
 ## Security model
 
-ChatGPT / MCP client -> HTTPS reverse proxy or tunnel -> MCP resource server
--> OIDC/JWKS validation from Keycloak.
+### Authorization architecture
+
+```mermaid
+flowchart TB
+    ADMIN["Administrator"]
+    AI["ChatGPT / AI Agent"]
+    KC["Keycloak<br/>Users / Groups / Roles / OAuth Scopes"]
+    EDGE["HTTPS Reverse Proxy / Cloudflare Tunnel"]
+    GW["MCP Gateway<br/>Token and Policy Enforcement"]
+    POLICY["Host-Owned policy.json<br/>Tool Flags / Allowed Roots<br/>Read-Only Bind Mount"]
+    CHECK{"Valid JWT + Required Scopes<br/>AND Role / Group Rule<br/>AND Enabled Capability?"}
+    ALLOW["Allowed MCP Operations"]
+    DENY["Access Denied"]
+
+    ADMIN -->|"Assign roles and scopes"| KC
+    ADMIN -->|"Configure access policy"| POLICY
+    KC -->|"OAuth login and access token"| AI
+    AI -->|"MCP request + Bearer token"| EDGE
+    EDGE --> GW
+    GW -->|"OIDC discovery + JWKS"| KC
+    POLICY -->|"Read-only policy"| GW
+    GW --> CHECK
+    CHECK -->|"Yes"| ALLOW
+    CHECK -->|"No"| DENY
+
+    classDef agent fill:#344256,color:#ffffff,stroke:#344256
+    classDef gateway fill:#446eac,color:#ffffff,stroke:#31568e
+    classDef identity fill:#15803d,color:#ffffff,stroke:#166534
+    classDef policy fill:#6366f1,color:#ffffff,stroke:#4338ca
+    classDef allowed fill:#dcfce7,color:#166534,stroke:#16a34a
+    classDef denied fill:#fee2e2,color:#991b1b,stroke:#dc2626
+    class AI agent
+    class GW,EDGE gateway
+    class KC identity
+    class POLICY policy
+    class ALLOW allowed
+    class DENY denied
+```
+
+Access is granted **only when both** the validated Keycloak access token and
+the administrator-controlled local policy authorize the requested operation.
+Filesystem operations additionally require an explicitly mounted, permitted
+root and suitable operating-system permissions.
 
 Keycloak remains the **authorization server**. This code only validates bearer
 access tokens; it does **not** issue tokens, accept arbitrary ID tokens as login,
-forward secrets, translate Keycloak roles into OAuth scopes, or run host commands. Admin-owned policy configuration lives outside the AI-writable tree.
+forward secrets, translate Keycloak roles into OAuth scopes, or run host commands.
+The live policy is stored outside all AI-writable roots and mounted read-only.
+See [Access Policy](docs/ACCESS_POLICY.md) for roles, groups and configuration.
 
 ## Local setup
 
