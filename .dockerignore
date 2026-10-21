@@ -15,6 +15,7 @@
 **/*.pfx
 **/*.log
 **/*.bak
+**/policy.json
 tests/
 docs/
 scripts/

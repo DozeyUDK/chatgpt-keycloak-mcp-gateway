@@ -17,6 +17,8 @@ issues containing secrets.
 - [ ] Use a fresh git repository. Inspect `git log --all -p`, not just HEAD.
 - [ ] Ensure public GitHub Actions have least-privilege permissions.
 - [ ] Run `python -m pytest -q` plus dependency scanning.
+- [ ] Verify full Git history is checked by CI (`fetch-depth: 0`).
+- [ ] Restrict `MCP_ALLOWED_ORIGINS` to trusted HTTPS origins (never `*`).
 - [ ] Run end-to-end tests against a throwaway Keycloak realm, a throwaway
       ChatGPT connector, and a throwaway Cloudflare hostname.
 - [ ] Review exact Keycloak redirect URIs, PKCE S256, issuer/aud/scope,

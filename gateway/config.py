@@ -1,6 +1,7 @@
 """Fail-closed configuration for a public OAuth-protected MCP resource."""
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -29,6 +30,7 @@ class Settings:
     audience: str
     required_scope: str = "mcp:read"
     jwks_cache_seconds: int = 300
+    allowed_origins: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_url", _https_url(self.public_url, "MCP_PUBLIC_URL", path="/mcp"))
@@ -39,6 +41,12 @@ class Settings:
             raise ValueError("MCP_REQUIRED_SCOPE must be one OAuth scope token")
         if self.jwks_cache_seconds < 30 or self.jwks_cache_seconds > 3600:
             raise ValueError("JWKS_CACHE_SECONDS must be between 30 and 3600")
+        if not isinstance(self.allowed_origins, (tuple, list)):
+            raise ValueError("MCP_ALLOWED_ORIGINS must be an array of origins")
+        for origin in self.allowed_origins:
+            if not isinstance(origin, str) or _https_url(origin, "MCP_ALLOWED_ORIGINS", path="") != origin:
+                raise ValueError("MCP_ALLOWED_ORIGINS entries must be exact HTTPS origins")
+
 
     @property
     def origin(self) -> str:
@@ -57,4 +65,5 @@ class Settings:
             audience=os.environ["KEYCLOAK_AUDIENCE"],
             required_scope=os.getenv("MCP_REQUIRED_SCOPE", "mcp:read"),
             jwks_cache_seconds=int(os.getenv("JWKS_CACHE_SECONDS", "300")),
+            allowed_origins=tuple(json.loads(os.getenv("MCP_ALLOWED_ORIGINS", "[]"))),
         )

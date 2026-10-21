@@ -27,3 +27,6 @@ venv/
 dist/
 build/
 *.egg-info/
+
+# Private runtime authorization policy must never be committed.
+**/policy.json

@@ -22,6 +22,8 @@ a read-only demo tool and disabled-by-default filesystem tools governed by a hos
 - Keycloak roles/groups + OAuth scopes + read-only host capability policy
   controlling optional `fs_read` and `fs_write` tools (both disabled by default);
 - fail-closed behavior when Keycloak or JWKS is unavailable;
+- Streamable HTTP transport checks (`Origin`, `MCP-Protocol-Version`),
+  OAuth scope challenges and authenticated GET returning HTTP 405 without SSE;
 - Docker configuration binding only to loopback (publish TLS via your own tunnel/proxy).
 
 ## Security model
@@ -86,6 +88,9 @@ See [Access Policy](docs/ACCESS_POLICY.md) for roles, groups and configuration.
    claims. A realm/client *role* named `mcp:read` is **not sufficient**.
 3. Copy the sample environment file: `cp .env.example .env` and replace the
    example URLs/audience with your own. Never commit the real `.env`.
+   Browser-based clients that send an `Origin` header must use an exact allowed
+   HTTPS origin. List any additional trusted origins in `MCP_ALLOWED_ORIGINS`
+   (JSON array); leave it `[]` for server-to-server clients without Origin.
    Copy `config/policy.example.json` to an administrator-owned file, e.g.
    `/srv/mcp-policy/policy.json`, **outside ALL AI-editable directories**;
    keep it root-owned and read-only, and set `MCP_POLICY_HOST_FILE` accordingly.
@@ -110,6 +115,10 @@ nginx configuration from your production host.**
     python -m pip install -r requirements-dev.txt
     python -m pytest -q
     python scripts/security_check.py
+
+The test suite also scans all reachable local Git history blobs for selected
+high-confidence secret patterns. This is not a substitute for an independent
+Gitleaks/TruffleHog audit before publishing.
 
 To inspect a public RFC 9728 endpoint:
 

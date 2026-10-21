@@ -18,7 +18,7 @@ from .config import Settings
 from .policy import Policy, load_policy
 from .fs_safe import FileAccessDenied, read_text, write_text
 
-SUPPORTED_VERSIONS = ("2025-11-25", "2025-06-18")
+SUPPORTED_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26")
 MAX_REQUEST_BYTES = 65536
 BEARER = re.compile(r"^Bearer ([A-Za-z0-9._~+/\-=]+)$", re.ASCII)
 TOOLS = {
@@ -70,8 +70,23 @@ def create_app(settings: Settings | None = None, verifier: OIDCVerifier | None =
     policy = policy or load_policy(os.getenv("POLICY_FILE", "/etc/mcp/policy.json"))
     app = FastAPI(title="Example ChatGPT Keycloak MCP Gateway", docs_url=None, redoc_url=None, openapi_url=None)
 
-    def _challenge(*, code: str | None = None, status: int = 401) -> JSONResponse:
-        value = f'Bearer resource_metadata="{settings.metadata_url}", scope="{settings.required_scope}"'
+    @app.middleware("http")
+    async def transport_security(request: Request, call_next):
+        if request.url.path == "/mcp":
+            origin = request.headers.get("origin")
+            # MCP clients often omit Origin (server-to-server). When provided,
+            # accept only the configured HTTPS origin or explicitly approved ones.
+            if origin is not None and origin not in {settings.origin, *settings.allowed_origins}:
+                return JSONResponse({"error": "origin_not_allowed"}, status_code=403)
+            protocol = request.headers.get("mcp-protocol-version")
+            if protocol is not None and protocol not in SUPPORTED_VERSIONS:
+                return JSONResponse({"error": "unsupported_protocol_version"}, status_code=400)
+        return await call_next(request)
+
+
+    def _challenge(*, code: str | None = None, status: int = 401, scopes: tuple[str, ...] | None = None) -> JSONResponse:
+        requested = " ".join(scopes) if scopes is not None else settings.required_scope
+        value = f'Bearer resource_metadata="{settings.metadata_url}", scope="{requested}"'
         if code:
             value += f', error="{code}"'
         return JSONResponse(
@@ -90,9 +105,26 @@ def create_app(settings: Settings | None = None, verifier: OIDCVerifier | None =
         return {
             "resource": settings.public_url,
             "authorization_servers": [settings.issuer],
-            "scopes_supported": sorted(set([settings.required_scope] + (["mcp:write"] if policy.tools["fs_write"].enabled else []))),
+            "scopes_supported": sorted(set([settings.required_scope] + (["mcp:write"] if policy.enabled("fs_write") else []))),
             "bearer_methods_supported": ["header"],
         }
+
+    @app.get("/mcp")
+    def mcp_get(request: Request) -> Response:
+        # Streamable HTTP permits 405 when no GET SSE stream is provided.
+        # Still enforce OAuth on GET, even though no streaming is supported.
+        matched = BEARER.fullmatch(request.headers.get("authorization", ""))
+        if not matched:
+            return _challenge()
+        try:
+            verifier.verify(matched.group(1))
+        except InvalidAccessToken:
+            return _challenge(code="invalid_token")
+        except InsufficientScope:
+            return _challenge(code="insufficient_scope", status=403)
+        except AuthBackendError:
+            return JSONResponse({"error": "authentication_service_unavailable"}, status_code=503)
+        return Response(status_code=405, headers={"Allow": "POST"})
 
     @app.post("/mcp")
     async def mcp(request: Request) -> Response:
@@ -158,8 +190,15 @@ def create_app(settings: Settings | None = None, verifier: OIDCVerifier | None =
         elif method == "tools/call":
             name = params.get("name")
             arguments = params.get("arguments", {})
-            if not isinstance(name, str) or not policy.allowed(name, claims):
+            if not isinstance(name, str) or not policy.enabled(name):
                 return _rpc_error(-32602, "Unknown or unauthorized tool", request_id)
+            if not policy.allowed(name, claims):
+                scopes = policy.tools[name].scopes
+                granted = claims.get("scope", "")
+                granted_set = set(granted.split()) if isinstance(granted, str) else set()
+                if not set(scopes).issubset(granted_set):
+                    return _challenge(code="insufficient_scope", status=403, scopes=scopes)
+                return JSONResponse({"error": "forbidden"}, status_code=403)
             if not isinstance(arguments, dict):
                 return _rpc_error(-32602, "Invalid arguments", request_id)
             if name == "demo_ping":

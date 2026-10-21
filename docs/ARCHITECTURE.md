@@ -30,3 +30,10 @@ The demonstration uses JSON-RPC 2.0 responses for simple MCP requests over
 HTTP POST. It is stateless and does not support server-side event streaming,
 resumability, subscriptions, or session IDs. It is not a drop-in substitute
 for a complete MCP SDK transport implementation.
+
+The HTTP transport validates the optional Origin and MCP-Protocol-Version
+headers. Browser client origins must be explicitly approved in
+MCP_ALLOWED_ORIGINS. Clients that omit Origin use bearer authentication.
+Authenticated GET /mcp responds with HTTP 405 because SSE is unsupported;
+POST /mcp processes stateless JSON-RPC calls. Insufficient OAuth scopes on
+an enabled tool produce HTTP 403 with a required-scope challenge.
