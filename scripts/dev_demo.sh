@@ -10,7 +10,7 @@ fi
 
 echo "Launching a DEV-ONLY, private Keycloak realm and MCP server..."
 echo "The demo does not expose ports on the host and cannot authenticate ChatGPT directly."
-docker compose -f docker-compose.dev.yml up --build --wait -d mcp-gateway
+docker compose -f docker-compose.dev.yml up --build --force-recreate --wait -d mcp-gateway
 
 echo "Checking a real Keycloak-issued access token against the MCP endpoint..."
 docker compose -f docker-compose.dev.yml --profile smoke run --build --rm smoke
