@@ -1,13 +1,22 @@
-# ChatGPT + Keycloak MCP Gateway (security-first example)
+# ChatGPT + Keycloak MCP Gateway
 
-A minimal, self-hosted OAuth-protected **Model Context Protocol (MCP) resource server**.
-Uses Keycloak for OIDC/JWKS, with a stateless Streamable HTTP `/mcp` endpoint and
-a read-only demo tool and disabled-by-default filesystem tools governed by a host-owned access policy. This is **not** copied from any production installation.
+**Work with files and self-hosted tools directly from ChatGPT, with access controlled by you.**
 
-> **Status: reference implementation / local test project.**
-> It has not been tested end-to-end with a real ChatGPT + Keycloak deployment.
-> It does not implement all optional MCP features or all edge cases of the full
-> Streamable HTTP transport specification. Do not treat it as audited infrastructure.
+In our running setup, ChatGPT can inspect projects, edit files in approved directories, and invoke explicitly exposed server-side tools. It can also prepare implementation plans for other coding agents, so you can review the work in ChatGPT and hand off the coding when needed.
+
+Keycloak handles sign-in and role/group membership. A separate, administrator-owned policy controls which MCP tools are available and where they may read or write.
+
+### Tested with ChatGPT Plus in regular Chat mode
+
+Our **full, self-hosted connector is running and has been used successfully with ChatGPT Plus and Keycloak**. We use it from regular **Chat mode**; **Work mode is not required**.
+
+If you want to use the normal Chat experience rather than the separate Work/Codex agentic allowance, stay in **Chat mode**. This does **not** mean unlimited or zero-token usage: normal ChatGPT plan and feature limits still apply. The gateway itself does not need an OpenAI API key or make paid OpenAI API inference requests.
+
+### What is included in this repository?
+
+This is a **sanitized, deliberately smaller example** of the architecture behind our working integration, not a copy of its full production toolset. It includes OAuth token validation, Keycloak role/group checks, an administrator-controlled access policy, `demo_ping`, `permissions_inspect`, and optional `fs_read` / `fs_write` tools (disabled by default).
+
+The **live connector works**; the **standalone public example** has automated tests but has **not been separately validated end-to-end against a fresh ChatGPT + Keycloak deployment**. Extra server operations must be implemented and granted explicitly. This code is not a production security audit or a drop-in replacement for the full connector.
 
 ## What this demonstrates
 
