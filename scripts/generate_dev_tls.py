@@ -87,13 +87,17 @@ def ensure_demo_tls(
     temp_key = dest / "keycloak-key.pem.next"
     temp_cert = dest / "keycloak.pem.next"
     try:
-        with temp_key.open("wb") as output:
+        # Set restrictive permissions before writing any private-key bytes.
+        key_fd = os.open(
+            temp_key, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600
+        )
+        with os.fdopen(key_fd, "wb") as output:
+            os.fchmod(output.fileno(), 0o600)
             output.write(private.private_bytes(
                 serialization.Encoding.PEM,
                 serialization.PrivateFormat.PKCS8,
                 serialization.NoEncryption(),
             ))
-        os.chmod(temp_key, 0o600)
         if key_owner_uid is not None:
             os.chown(temp_key, key_owner_uid, 0)
         temp_cert.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
